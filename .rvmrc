@@ -1,0 +1,11 @@
+source .gemset
+export USE_BUNDLER=force
+
+rvm use --create --install $RVM_GEMSET
+
+if [[ -s "./bootstrap.gems" ]]; then
+  if ! rvm gemset import bootstrap.gems > /dev/null 2>&1; then
+    echo "ERROR: Unable to bootstrap the gems" >&2
+  fi
+fi
+

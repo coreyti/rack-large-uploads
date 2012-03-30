@@ -1,6 +1,15 @@
-# Rack::Large::Uploads
+# Rack::LargeUploads
 
-TODO: Write a gem description
+Rack middleware for handling large file uploads.Integrates nicely with the
+Nginx upload module: http://www.grid.net.ru/nginx/upload.en.html
+
+Includes `Rack::LargeUploads::UploadedFile`, which matches the definition of
+`ActionDispatch::Http::UploadedFile`.  So, little-to-no change should be
+required when using, e.g., Rails.
+
+Based largely on the [`Rack::Uploads` middleware](https://github.com/mutle/rack-uploads),
+but with greater expectations regarding conventions, and specific support for
+large files (dealing with memory issues).
 
 ## Installation
 
@@ -18,7 +27,56 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+example middleware configuration:
+
+    use Rack::LargeUploads do
+      before do |files|
+        # process uploaded files *before* application handling
+      end
+
+      after do |files|
+        # process uploaded files *after* application handling
+      end
+    end
+
+example nginx configuration:
+
+    location / {
+      try_files $document_root/system/maintenance.html $uri $uri/index.html $uri.html @application;
+    }
+
+    location = /uploads {
+      # depends on the nginx upload module (http://www.grid.net.ru/nginx/upload.en.html)
+      upload_pass         @application;
+
+      # NOTE: if there is no upload file in the request, nginx generates a 405.
+      # use that to pass the request on to the endpoint, instead of try_files
+      # which fails to play nicely with upload_pass.
+      #
+      # credit:
+      # http://www.nickager.com/blog/File-upload-using-Nginx-and-Seaside---step-1
+      error_page          405 415 = @application;
+
+      upload_store        /path/to/app/tmp/uploads 1;
+      upload_store_access user:rw group:rw all:rw;
+
+      upload_pass_args       on;         # NOTE: handles URI params, not form content.
+      upload_pass_form_field "^[a-z_].*"; # ...and here is how we resolve that last.
+
+      # match the request params expected by ActionDispatch
+      upload_set_form_field "$upload_field_name[filename]"   "$upload_file_name";
+      upload_set_form_field "$upload_field_name[type]"       "$upload_content_type";
+      upload_set_form_field "$upload_field_name[tempfile]"   "$upload_tmp_path";
+
+      upload_aggregate_form_field "$upload_field_name[md5]"  "$upload_file_md5";
+      upload_aggregate_form_field "$upload_field_name[size]" "$upload_file_size";
+    }
+
+    location @application {
+      proxy_pass  http://upstream_application;
+
+      # more config...
+    }
 
 ## Contributing
 
