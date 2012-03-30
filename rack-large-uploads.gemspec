@@ -21,4 +21,8 @@ Gem::Specification.new do |gem|
   gem.add_development_dependency "rspec"
   gem.add_development_dependency "rr"
   gem.add_development_dependency "simplecov"
+
+  # TODO: remove dependencies on these:
+  gem.add_runtime_dependency "actionpack"
+  gem.add_runtime_dependency "activesupport"
 end
