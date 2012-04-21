@@ -49,7 +49,7 @@ example nginx configuration:
       # depends on the nginx upload module (http://www.grid.net.ru/nginx/upload.en.html)
       upload_pass         @application;
 
-      # NOTE: if there is no upload file in the request, nginx generates a 405.
+      # NOTE: if the request is something other than POST, nginx generates a 405.
       # use that to pass the request on to the endpoint, instead of try_files
       # which fails to play nicely with upload_pass.
       #
