@@ -2,6 +2,9 @@ module Rack
   class LargeUploads
     class UploadedFile < ActionDispatch::Http::UploadedFile
       def initialize(hash)
+        tempfile = hash[:tempfile]
+        hash[:tempfile] = ::File.new(tempfile) if tempfile.is_a?(String)
+
         @uploaded_md5  = hash.delete(:md5)
         @uploaded_size = hash.delete(:size)
         super(hash)

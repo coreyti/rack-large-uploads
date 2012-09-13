@@ -1,12 +1,14 @@
-require "rack/large-uploads/version"
+require 'fileutils'
+require 'rack/large-uploads/version'
 
 # TODO: remove these dependencies:
-require "action_dispatch"
-require "active_support/core_ext"
+require 'action_dispatch'
+require 'active_support/core_ext'
 
 module Rack
   class LargeUploads
-    autoload :UploadedFile, 'rack/large-uploads/uploaded_file'
+    autoload :UploadedChunk, 'rack/large-uploads/uploaded_chunk'
+    autoload :UploadedFile,  'rack/large-uploads/uploaded_file'
 
     def initialize(app, options = {}, &block)
       @app     = app
@@ -23,17 +25,27 @@ module Rack
 
     def call(env)
       request = Rack::Request.new(env)
+      params  = request.params
 
       if request.post? && request.form_data?
-        files = extract_files(request, request.params)
+        files = extract_files(request, params)
       end
 
-      filter(:before, files) if files.present?
-      response = @app.call(env)
-      filter(:after, files) if files.present?
+      if files.present?
+        if files.all? { |f| f.is_a?(Rack::LargeUploads::UploadedFile) }
+          filter(:before, env, files)
+          response = @app.call(env)
+          filter(:after, env, files)
 
-      response
+          return response
+        else
+          return [202, {}, []]
+        end
+      else
+        @app.call(env)
+      end
     end
+
 
     def before(&block)
       @filters[:before] = block
@@ -45,8 +57,8 @@ module Rack
 
     private
 
-      def filter(position, files)
-        @filters[position] && @filters[position].call(files)
+      def filter(position, env, files)
+        @filters[position] && @filters[position].call(env, files)
       end
 
       def extract_files(request, params, files = [])
@@ -61,6 +73,10 @@ module Rack
         files
       end
 
+      # TODO:
+      #   * make chunked check configurable (:filename value at least, maybe other)
+      #   * make chunked storage path configurable
+      #   * make 'uploader' param configurable, and per-upload rather than per-request
       def file_from(request, key, value)
         # direct to rails...
         # ----->
@@ -83,13 +99,42 @@ module Rack
         #     "md5"     =>"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         #     "size"    =>"5242880000"
         #   }
+
         if value.is_a?(Hash)
           attributes = HashWithIndifferentAccess.new(value)
           tempfile   = attributes[:tempfile]
 
           if tempfile.present?
-            tempfile = ::File.new(tempfile) if tempfile.is_a?(String)
-            return Rack::LargeUploads::UploadedFile.new(attributes.merge({ :tempfile => tempfile }))
+            # check for "chunked" upload
+            if attributes[:filename] == 'blob'
+              temppath = tempfile.is_a?(String) ? tempfile : tempfile.path
+              storage  = ::File.expand_path(::File.join(temppath, '../../chunked'))
+              uploader = request.params['uploader']
+              combined = ::File.join(storage, uploader)
+              fullsize = request.env['HTTP_X_FILE_SIZE'].to_i
+
+              # append chunk to "combined" File
+              FileUtils.mkdir_p(storage)
+              ::File.open(combined, 'ab') do |f|
+                f.write(::File.read(tempfile))
+              end
+
+              # finished?
+              if ::File.size(combined) == fullsize
+                attributes = {
+                  :filename => request.env['HTTP_X_FILE_NAME'],
+                  :size     => request.env['HTTP_X_FILE_SIZE'],
+                  :type     => request.env['HTTP_X_FILE_TYPE'],
+                  :tempfile => ::File.new(combined)
+                }
+
+                return Rack::LargeUploads::UploadedFile.new(attributes)
+              else
+                return Rack::LargeUploads::UploadedChunk.new(attributes)
+              end
+            else
+              return Rack::LargeUploads::UploadedFile.new(attributes)
+            end
           end
         end
 

@@ -11,6 +11,16 @@ Based largely on the [`Rack::Uploads` middleware](https://github.com/mutle/rack-
 but with greater expectations regarding conventions, and specific support for
 large files (dealing with memory issues).
 
+Implements **(experimental)** handling of chunked uploads, only passing control
+to, e.g., Rails once all uploads for the request are complete. This is very
+experimental, because it is currently:
+
+  * dependent upon headers and filename value as set by blueimp's jQuery
+    fileupload plugin
+  * dependent on the presence of `uploader` request param, which is a UUID or
+    similar, and is used to collect the upload chunks
+  * untested
+
 ## Installation
 
 Add this line to your application's Gemfile:
@@ -57,10 +67,15 @@ example nginx configuration:
       # http://www.nickager.com/blog/File-upload-using-Nginx-and-Seaside---step-1
       error_page          405 415 = @application;
 
+      # NOTE: cleaning up 201 & 202 means we need to be sure our app is doing
+      # some processing right away. Rack::LargeUploads sends 202 responses for
+      # each chunk received during chunked uploads, and the chunk has been
+      # appended to the combined file by the time we're back with the response.
+      upload_cleanup      201 202 400 404 499 500-505;
       upload_store        /path/to/app/tmp/uploads 1;
       upload_store_access user:rw group:rw all:rw;
 
-      upload_pass_args       on;         # NOTE: handles URI params, not form content.
+      upload_pass_args       on;          # NOTE: handles URI params, not form content.
       upload_pass_form_field "^[a-z_].*"; # ...and here is how we resolve that last.
 
       # match the request params expected by ActionDispatch
